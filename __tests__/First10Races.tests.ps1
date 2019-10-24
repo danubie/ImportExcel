@@ -3,7 +3,7 @@ $dataPath = Join-Path  -Path $scriptPath -ChildPath "First10Races.csv"
 
 Describe "Creating small named ranges with hyperlinks" {
     BeforeAll {
-        $path = "$env:TEMP\Results.xlsx"
+        $path = "TestDrive:\Results.xlsx"
         Remove-Item -Path $path -ErrorAction SilentlyContinue
         #Read race results, and group by race name : export 1 row to get headers, leaving enough rows aboce to put in a link for each race
         $results = Import-Csv -Path $dataPath |
@@ -54,7 +54,7 @@ Describe "Creating small named ranges with hyperlinks" {
 
         $excel = Open-ExcelPackage $path
         $sheet = $excel.Workbook.Worksheets[1]
-        $m = $results | measure -sum -Property count
+        $m = $results | Measure-Object -sum -Property count
         $expectedRows = 1 + $m.count + $m.sum
     }
     Context "Creating hyperlinks" {
@@ -81,7 +81,7 @@ Describe "Creating small named ranges with hyperlinks" {
             $placesMade = $Sheet.Cells[(2 + $results.Count), 5].value - $Sheet.Cells[(2 + $results.Count), 3].value
             $sheet.Cells[(2 + $results.Count), $columns].value             | Should be $placesmade
         }
-        It "Applied ConditionalFormatting, including StopIfTrue, Priority and Reverse              " {
+        It "Applied ConditionalFormatting, including StopIfTrue, Priority                          " {
             $sheet.ConditionalFormatting[0].Address.Start.Column        | should     be $columns
             $sheet.ConditionalFormatting[0].Address.End.Column          | should     be $columns
             $sheet.ConditionalFormatting[0].Address.End.Row             | should     be $expectedRows
@@ -90,6 +90,9 @@ Describe "Creating small named ranges with hyperlinks" {
             $sheet.ConditionalFormatting[0].Icon3.Value                 | Should     be 1
             $sheet.ConditionalFormatting[1].Priority                    | Should     be 1
             $sheet.ConditionalFormatting[1].StopIfTrue                  | Should     be $true
+        }
+        It "Applied ConditionalFormatting, including Reverse                                       " {
+            Set-ItResult -Pending -Because "Bug in EPPLus 4.5"
             $sheet.ConditionalFormatting[3].LowValue.Color.R            | Should     begreaterThan 180
             $sheet.ConditionalFormatting[3].LowValue.Color.G            | Should     beLessThan 128
             $sheet.ConditionalFormatting[3].HighValue.Color.R           | Should     beLessThan 128

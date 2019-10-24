@@ -84,9 +84,9 @@
         .PARAMETER RangeName
             Makes the data in the worksheet a named range.
         .PARAMETER TableName
-            Makes the data in the worksheet a table with a name, and applies a style to it. Name must not contain spaces.
+            Makes the data in the worksheet a table with a name, and applies a style to it. The name must not contain spaces. If a style is specified without a name, table1, table2 etc. will be used.
         .PARAMETER TableStyle
-            Selects the style for the named table - defaults to 'Medium6'.
+            Selects the style for the named table - if a name is specified without a style, 'Medium6' is used as a default.
         .PARAMETER BarChart
             Creates a "quick" bar chart using the first text column as labels and the first numeric column as values
         .PARAMETER ColumnChart
@@ -133,10 +133,12 @@
             Enables the Excel filter on the complete header row, so users can easily sort, filter and/or search the data in the selected column.
         .PARAMETER AutoSize
             Sizes the width of the Excel column to the maximum width needed to display all the containing data in that cell.
+        .PARAMETER MaxAutoSizeRows
+            Autosizing can be time consuming, so this sets a maximum number of rows to look at for the Autosize operation. Default is 1000; If 0 is specified ALL rows will be checked
         .PARAMETER Activate
             If there is already content in the workbook, a new sheet will not be active UNLESS Activate is specified; if a PivotTable is included it will be the active sheet
         .PARAMETER Now
-            The -Now switch is a shortcut that automatically creates a temporary file, enables "AutoSize", "AutoFiler" and "Show", and opens the file immediately.
+            The -Now switch is a shortcut that automatically creates a temporary file, enables "AutoSize", "TableName" and "Show", and opens the file immediately.
         .PARAMETER NumberFormat
             Formats all values that can be converted to a number to the format specified.
 
@@ -420,14 +422,15 @@
     [OutputType([OfficeOpenXml.ExcelPackage])]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingPlainTextForPassword", "")]
     Param(
-        [Parameter(ParameterSetName = "Default", Position = 0)]
-        [Parameter(ParameterSetName = "Table"  , Position = 0)]
+
+        [Parameter(ParameterSetName = 'Default', Position = 0)]
         [String]$Path,
-        [Parameter(Mandatory = $true, ParameterSetName = "PackageDefault")]
-        [Parameter(Mandatory = $true, ParameterSetName = "PackageTable")]
+        [Parameter(Mandatory = $true, ParameterSetName = "Package")]
+
         [OfficeOpenXml.ExcelPackage]$ExcelPackage,
         [Parameter(ValueFromPipeline = $true)]
-        $TargetData,
+        [Alias('TargetData')]
+        $InputObject,
         [Switch]$Calculate,
         [Switch]$Show,
         [String]$WorksheetName = 'Sheet1',
@@ -453,13 +456,14 @@
         [Switch]$ShowCategory,
         [Switch]$ShowPercent,
         [Switch]$AutoSize,
+        $MaxAutoSizeRows = 1000,
         [Switch]$NoClobber,
         [Switch]$FreezeTopRow,
         [Switch]$FreezeFirstColumn,
         [Switch]$FreezeTopRowFirstColumn,
         [Int[]]$FreezePane,
-        [Parameter(ParameterSetName = 'Default')]
-        [Parameter(ParameterSetName = 'PackageDefault')]
+
+
         [Switch]$AutoFilter,
         [Switch]$BoldTopRow,
         [Switch]$NoHeader,
@@ -469,17 +473,12 @@
                 else { $true }
             })]
         [String]$RangeName,
-        [ValidateScript( {
-                if (-not $_) {  throw 'Tablename is null or empty.'  }
-                elseif ($_[0] -notmatch '[a-z]') { throw 'Tablename starts with an invalid character.'  }
-                else { $true }
-            })]
-        [Parameter(ParameterSetName = 'Table'        , Mandatory = $true, ValueFromPipelineByPropertyName)]
-        [Parameter(ParameterSetName = 'PackageTable' , Mandatory = $true, ValueFromPipelineByPropertyName)]
-        [String]$TableName,
-        [Parameter(ParameterSetName = 'Table')]
-        [Parameter(ParameterSetName = 'PackageTable')]
-        [OfficeOpenXml.Table.TableStyles]$TableStyle = 'Medium6',
+
+
+        $TableName,
+
+
+        [OfficeOpenXml.Table.TableStyles]$TableStyle,
         [Switch]$Barchart,
         [Switch]$PieChart,
         [Switch]$LineChart ,
@@ -495,6 +494,7 @@
         [Switch]$AutoNameRange,
         [Int]$StartRow = 1,
         [Int]$StartColumn = 1,
+        [alias('PT')]
         [Switch]$PassThru,
         [String]$Numberformat = 'General',
         [string[]]$ExcludeProperty,
@@ -503,10 +503,11 @@
         [String[]]$NoNumberConversion,
         [Object[]]$ConditionalFormat,
         [Object[]]$ConditionalText,
+        [Object[]]$Style,
         [ScriptBlock]$CellStyleSB,
         #If there is already content in the workbook the sheet with the PivotTable will not be active UNLESS Activate is specified
         [switch]$Activate,
-        [Parameter(ParameterSetName = 'Now')]
+        [Parameter(ParameterSetName = 'Default')]
         [Switch]$Now,
         [Switch]$ReturnRange,
         #By default PivotTables have Totals for each Row (on the right) and for each column at the bottom. This allows just one or neither to be selected.
@@ -517,109 +518,25 @@
         [Switch]$ReZip
     )
 
-    Begin {
+    begin {
         $numberRegex = [Regex]'\d'
-        function Add-CellValue {
-            <#
-              .SYNOPSIS
-                Save a value in an Excel cell.
-
-              .DESCRIPTION
-                DateTime objects are always converted to a short DateTime format in Excel. When Excel loads the file,
-                it applies the local format for dates. And formulas are always saved as formulas. URIs are set as hyperlinks in the file.
-
-                Numerical values will be converted to numbers as defined in the regional settings of the local
-                system. In case the parameter 'NoNumberConversion' is used, we don't convert to number and leave
-                the value 'as is'. In case of conversion failure, we also leave the value 'as is'.
-            #>
-
-            Param (
-                $TargetCell,
-                $CellValue
-            )
-            #The write-verbose commands have been commented out below - even if verbose is silenced they cause a significiant performance impact and if it's on they will cause a flood of messages.
-            Switch ($CellValue) {
-                { $_ -is [DateTime]} {
-                    # Save a date with one of Excel's built in formats format
-                    $TargetCell.Value = $_
-                    $TargetCell.Style.Numberformat.Format = 'm/d/yy h:mm' # This is not a custom format, but a preset recognized as date and localized.
-                    #Write-Verbose  "Cell '$Row`:$ColumnIndex' header '$Name' add value '$_' as date"
-                    break
-
-                }
-                { $_ -is [TimeSpan]} {
-                    #Save a timespans with a built in format for elapsed hours, minutes and seconds
-                    $TargetCell.Value = $_
-                    $TargetCell.Style.Numberformat.Format = '[h]:mm:ss'
-                    break
-                }
-                { $_ -is [System.ValueType]} {
-                    # Save numerics, setting format if need be.
-                    $TargetCell.Value = $_
-                    if ($setNumformat) {$targetCell.Style.Numberformat.Format = $Numberformat }
-                    #Write-Verbose  "Cell '$Row`:$ColumnIndex' header '$Name' add value '$_' as value"
-                    break
-                }
-                {($_ -is [String]) -and ($_[0] -eq '=')} {
-                    #region Save an Excel formula - we need = to spot the formula but the EPPLUS won't like it if we include it (Excel doesn't care if is there or not)
-                    $TargetCell.Formula = ($_ -replace '^=','')
-                    if ($setNumformat) {$targetCell.Style.Numberformat.Format = $Numberformat }
-                    #Write-Verbose  "Cell '$Row`:$ColumnIndex' header '$Name' add value '$_' as formula"
-                    break
-                }
-                { [System.Uri]::IsWellFormedUriString($_ , [System.UriKind]::Absolute) } {
-                    # Save a hyperlink : internal links can be in the form xl://sheet!E419 (use A1 as goto sheet), or xl://RangeName
-                    if ($_ -is [uri]) {$targetCell.HyperLink = $_ }
-                    elseif ($_ -match "^xl://internal/") {
-                          $referenceAddress = $_ -replace "^xl://internal/" , ""
-                          $display          = $referenceAddress -replace "!A1$"   , ""
-                          $h = New-Object -TypeName OfficeOpenXml.ExcelHyperLink -ArgumentList $referenceAddress , $display
-                          $TargetCell.HyperLink = $h
-                    }
-                    else {$TargetCell.HyperLink = $_ }   #$TargetCell.Value = $_.AbsoluteUri
-                    $TargetCell.Style.Font.Color.SetColor([System.Drawing.Color]::Blue)
-                    $TargetCell.Style.Font.UnderLine = $true
-                    #Write-Verbose  "Cell '$Row`:$ColumnIndex' header '$Name' add value '$($_.AbsoluteUri)' as Hyperlink"
-                    break
-                }
-                {( $NoNumberConversion -and (
-                  ($NoNumberConversion -contains $Name) -or ($NoNumberConversion -eq '*'))) } {
-                    #Save text without it to converting to number
-                    $TargetCell.Value = $_
-                    #Write-Verbose "Cell '$Row`:$ColumnIndex' header '$Name' add value '$($TargetCell.Value)' unconverted"
-                    break
-                }
-                Default {
-                    #Save a value as a number if possible
-                    $number = $null
-                    if ($numberRegex.IsMatch($_) -and [Double]::TryParse($_, [System.Globalization.NumberStyles]::Any, [System.Globalization.NumberFormatInfo]::CurrentInfo, [Ref]$number)) {
-                        # as simpler version using [Double]::TryParse( $_ , [ref]$number)) was found to cause problems reverted back to the longer version
-                        $TargetCell.Value = $number
-                        if ($setNumformat) {$targetCell.Style.Numberformat.Format = $Numberformat }
-                        #Write-Verbose  "Cell '$Row`:$ColumnIndex' header '$Name' add value '$($TargetCell.Value)' as number converted from '$_' with format '$Numberformat'"
-                    }
-                    else {
-                        $TargetCell.Value = $_
-                        #Write-Verbose "Cell '$Row`:$ColumnIndex' header '$Name' add value '$($TargetCell.Value)' as string"
-                    }
-                    break
-                }
-            }
-        }
-
-        try {
+        $isDataTypeValueType = $false
+        if ($NoClobber) {Write-Warning -Message "-NoClobber parameter is no longer used" }
+        #Open the file, get the worksheet, and decide where in the sheet we are writing, and if there is a number format to apply.
+        try   {
             $script:Header = $null
             if ($Append -and $ClearSheet) {throw "You can't use -Append AND -ClearSheet."}
-
-            if ($PSBoundParameters.Keys.Count -eq 0 -Or $Now) {
-                $Path = [System.IO.Path]::GetTempFileName() -replace '\.tmp', '.xlsx'
-                $Show = $true
-                $AutoSize = $true
-                if (!$TableName) {
-                    $AutoFilter = $true
+            $TableName = if ($null -eq $TableName -or ($TableName -is [bool] -and $false -eq $TableName)) { $null } else {[String]$TableName}
+            if ($PSBoundParameters.Keys.Count -eq 0 -Or $Now -or (-not $Path -and -not $ExcelPackage) ) {
+                if (-not $PSBoundParameters.ContainsKey("Path")) { $Path = [System.IO.Path]::GetTempFileName() -replace '\.tmp', '.xlsx' }
+                if (-not $PSBoundParameters.ContainsKey("Show")) { $Show = $true }
+                if (-not $PSBoundParameters.ContainsKey("AutoSize")) { $AutoSize = $true }
+                if (-not $PSBoundParameters.ContainsKey("TableName") -and
+                    -not $PSBoundParameters.ContainsKey("TableStyle") -and
+                    -not $AutoFilter) {
+                    $TableName = ''
                 }
             }
-
             if ($ExcelPackage) {
                 $pkg = $ExcelPackage
                 $Path = $pkg.File
@@ -627,8 +544,7 @@
             Else { $pkg = Open-ExcelPackage -Path $Path -Create -KillExcel:$KillExcel -Password:$Password}
         }
         catch {throw "Could not open Excel Package $path"}
-        if ($NoClobber) {Write-Warning -Message "-NoClobber parameter is no longer used" }
-        try {
+        try   {
             $params = @{WorksheetName=$WorksheetName}
             foreach ($p in @("ClearSheet", "MoveToStart", "MoveToEnd", "MoveBefore", "MoveAfter", "Activate")) {if ($PSBoundParameters[$p]) {$params[$p] = $PSBoundParameters[$p]}}
             $ws = $pkg | Add-WorkSheet @params
@@ -638,7 +554,7 @@
             }
         }
         catch {throw "Could not get worksheet $worksheetname"}
-        try {
+        try   {
             if ($Append -and $ws.Dimension) {
                 #if there is a title or anything else above the header row, append needs to be combined wih a suitable startrow parameter
                 $headerRange = $ws.Dimension.Address -replace "\d+$", $StartRow
@@ -660,7 +576,7 @@
                 }
 
                 #if we did not get a table name but there is a table which covers the active part of the sheet, set table name to that, and don't do anything with autofilter
-                if (-not $TableName -and $ws.Tables.Where({$_.address.address -eq $ws.dimension.address})) {
+                if ($null -eq $TableName -and $ws.Tables.Where({$_.address.address -eq $ws.dimension.address})) {
                     $TableName  = $ws.Tables.Where({$_.address.address -eq $ws.dimension.address},'First', 1).Name
                     $AutoFilter = $false
                 }
@@ -702,81 +618,144 @@
                     $setNumformat = $false
             }
             else {  $setNumformat = ($Numberformat -ne $ws.Cells.Style.Numberformat.Format) }
-
-            $firstTimeThru = $true
-            $isDataTypeValueType = $false
-      }
-        catch {
-            if ($AlreadyExists) {
-                #Is this set anywhere ?
-                throw "Failed exporting worksheet '$WorksheetName' to '$Path': The worksheet '$WorksheetName' already exists."
+        }
+        catch {throw "Failed preparing to export to worksheet '$WorksheetName' to '$Path': $_"}
+        #region Special case -inputobject passed a dataTable object
+        <# If inputObject was passed via the pipeline it won't be visible until the process block, we will only see it here if it was passed as a parameter
+          if it was passed it is a data table don't do foreach on it (slow) put the whole table in and set dates on date columns,
+          set things up for the end block, and skip the process block #>
+        if ($InputObject -is  [System.Data.DataTable])  {
+            $null = $ws.Cells[$row,$StartColumn].LoadFromDataTable($InputObject, (-not $noHeader) )
+            foreach ($c in $InputObject.Columns.where({$_.datatype -eq [datetime]})) {
+                Set-ExcelColumn -Worksheet $ws -Column ($c.Ordinal + $StartColumn) -NumberFormat 'Date-Time'
             }
-            else {
-                throw "Failed preparing to export to worksheet '$WorksheetName' to '$Path': $_"
+            foreach ($c in $InputObject.Columns.where({$_.datatype -eq [timespan]})) {
+                Set-ExcelColumn -Worksheet $ws -Column ($c.Ordinal + $StartColumn) -NumberFormat '[h]:mm:ss'
             }
-      }
+            $ColumnIndex         += $InputObject.Columns.Count - 1
+            if ($noHeader) {$row += $InputObject.Rows.Count -1 }
+            else           {$row += $InputObject.Rows.Count    }
+            $null = $PSBoundParameters.Remove('InputObject')
+            $firstTimeThru = $false
+        }
+        #endregion
+        else  {$firstTimeThru = $true}
     }
 
-    Process {
-        if ($PSBoundParameters.ContainsKey("TargetData")) {
-            try {
+    process { if ($PSBoundParameters.ContainsKey("InputObject")) {
+        try {
+            if ($null -eq $InputObject) {$row += 1}
+            foreach ($TargetData in $InputObject) {
                 if ($firstTimeThru) {
                     $firstTimeThru = $false
                     $isDataTypeValueType = ($null -eq $TargetData) -or ($TargetData.GetType().name -match 'string|timespan|datetime|bool|byte|char|decimal|double|float|int|long|sbyte|short|uint|ulong|ushort|URI|ExcelHyperLink')
-                    if ($isDataTypeValueType -and -not $Append) {$row -= 1} #row incremented before adding values, so it is set to the number of rows inserted at the end
-                    if ($null -ne  $TargetData) {Write-Debug "DataTypeName is '$($TargetData.GetType().name)' isDataTypeValueType '$isDataTypeValueType'" }
+                    if ($isDataTypeValueType ) {
+                        $script:Header = @(".")       # dummy value to make sure we go through the "for each name in $header"
+                        if (-not $Append) {$row -= 1} # By default row will be 1, it is incremented before inserting values (so it ends pointing at final row.);  si first data row is 2 - move back up 1 if there is no header .
+                    }
+                    if ($null -ne $TargetData) {Write-Debug "DataTypeName is '$($TargetData.GetType().name)' isDataTypeValueType '$isDataTypeValueType'" }
                 }
-                if ($isDataTypeValueType) {
-                    $ColumnIndex = $StartColumn
-                    $Row += 1
-                    try    {Add-CellValue -TargetCell $ws.Cells[$Row, $ColumnIndex] -CellValue $TargetData}
-                    catch  {Write-Warning "Could not insert value at Row $Row. "}
-                }
-                else {
-                    #region Add headers - if we are appending, or we have been through here once already we will have the headers
-                    if (-not $script:Header) {
+                #region Add headers - if we are appending, or we have been through here once already we will have the headers
+                if (-not $script:Header) {
+                    if ($DisplayPropertySet -and $TargetData.psStandardmembers.DefaultDisplayPropertySet.ReferencedPropertyNames) {
+                        $script:Header = $TargetData.psStandardmembers.DefaultDisplayPropertySet.ReferencedPropertyNames.Where( {$_ -notin $ExcludeProperty})
+                    }
+                    else {
+                        if ($NoAliasOrScriptPropeties) {$propType = "Property"} else {$propType = "*"}
+                        $script:Header = $TargetData.PSObject.Properties.where( {$_.MemberType -like $propType}).Name
+                    }
+                    foreach ($exclusion in $ExcludeProperty) {$script:Header = $script:Header -notlike $exclusion}
+                    if ($NoHeader) {
+                        # Don't push the headers to the spreadsheet
+                        $Row -= 1
+                    }
+                    else {
                         $ColumnIndex = $StartColumn
-                        if ($DisplayPropertySet -and $TargetData.psStandardmembers.DefaultDisplayPropertySet.ReferencedPropertyNames) {
-                            $script:Header = $TargetData.psStandardmembers.DefaultDisplayPropertySet.ReferencedPropertyNames.Where( {$_ -notin $ExcludeProperty})
-                        }
-                        else {
-                            if ($NoAliasOrScriptPropeties) {$propType = "Property"} else {$propType = "*"}
-                            $script:Header = $TargetData.PSObject.Properties.where( {$_.MemberType -like $propType}).Name
-                        }
-                        foreach ($exclusion in $ExcludeProperty) {$script:Header = $script:Header -notlike $exclusion}
-                        if ($NoHeader) {
-                            # Don't push the headers to the spreadsheet
-                            $Row -= 1
-                        }
-                        else {
-                            foreach ($Name in $script:Header) {
-                                $ws.Cells[$Row, $ColumnIndex].Value = $Name
-                                Write-Verbose "Cell '$Row`:$ColumnIndex' add header '$Name'"
-                                $ColumnIndex += 1
-                            }
+                        foreach ($Name in $script:Header) {
+                            $ws.Cells[$Row, $ColumnIndex].Value = $Name
+                            Write-Verbose "Cell '$Row`:$ColumnIndex' add header '$Name'"
+                            $ColumnIndex += 1
                         }
                     }
-                    #endregion
-                    #region Add non header values
-                    $Row += 1
-                    $ColumnIndex = $StartColumn
-
-                    foreach ($Name in $script:Header) {
-                        try   {Add-CellValue -TargetCell $ws.Cells[$Row, $ColumnIndex] -CellValue $TargetData.$Name}
-                        catch {Write-Warning -Message "Could not insert the '$Name' property at Row $Row, Column $ColumnIndex"}
-                        $ColumnIndex += 1
-                    }
-                    $ColumnIndex -= 1 # column index will be the last column whether isDataTypeValueType was true or false
-                    #endregion
                 }
-            }
-            catch {
-                throw "Failed exporting data to worksheet '$WorksheetName' to '$Path': $_"
+                #endregion
+                #region Add non header values
+                $Row += 1
+                $ColumnIndex = $StartColumn
+                <#
+                 For each item in the header OR for the Data item if this is a simple Type or data table :
+                   If it is a date insert with one of Excel's built in formats - recognized as "Date and time to be localized"
+                   if it is a timespan insert with a built in format for elapsed hours, minutes and seconds
+                   if its  any other numeric insert as is , setting format if need be.
+                   Preserve URI, Insert a data table, convert non string objects to string.
+                   For strings, check for fomula, URI or Number, before inserting as a string  (ignore nulls) #>
+                foreach ($Name in $script:Header) {
+                    if   ($isDataTypeValueType) {$v = $TargetData}
+                    else {$v = $TargetData.$Name}
+                    try   {
+                        if     ($v -is    [DateTime]) {
+                            $ws.Cells[$Row, $ColumnIndex].Value = $v
+                            $ws.Cells[$Row, $ColumnIndex].Style.Numberformat.Format = 'm/d/yy h:mm' # This is not a custom format, but a preset recognized as date and localized.
+                        }
+                        elseif ($v -is    [TimeSpan]) {
+                            $ws.Cells[$Row, $ColumnIndex].Value = $v
+                            $ws.Cells[$Row, $ColumnIndex].Style.Numberformat.Format = '[h]:mm:ss'
+                        }
+                        elseif ($v -is    [System.ValueType]) {
+                            $ws.Cells[$Row, $ColumnIndex].Value = $v
+                            if ($setNumformat) {$ws.Cells[$Row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
+                        }
+                        elseif ($v -is    [uri] ) {
+                            $ws.Cells[$Row, $ColumnIndex].HyperLink = $v
+                            $ws.Cells[$Row, $ColumnIndex].Style.Font.Color.SetColor([System.Drawing.Color]::Blue)
+                            $ws.Cells[$Row, $ColumnIndex].Style.Font.UnderLine = $true
+                        }
+                        elseif ($v -isnot [String] ) { #Other objects or null.
+                            if ($null -ne $v) { $ws.Cells[$Row, $ColumnIndex].Value = $v.toString()}
+                        }
+                        elseif ($v[0] -eq '=') {
+                            $ws.Cells[$Row, $ColumnIndex].Formula = ($v -replace '^=','')
+                            if ($setNumformat) {$ws.Cells[$Row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
+                        }
+                        elseif ( [System.Uri]::IsWellFormedUriString($v , [System.UriKind]::Absolute) ) {
+                            if ($v -match "^xl://internal/") {
+                                  $referenceAddress = $v -replace "^xl://internal/" , ""
+                                  $display          = $referenceAddress -replace "!A1$"   , ""
+                                  $h = New-Object -TypeName OfficeOpenXml.ExcelHyperLink -ArgumentList $referenceAddress , $display
+                                  $ws.Cells[$Row, $ColumnIndex].HyperLink = $h
+                            }
+                            else {$ws.Cells[$Row, $ColumnIndex].HyperLink = $v }   #$ws.Cells[$Row, $ColumnIndex].Value = $v.AbsoluteUri
+                            $ws.Cells[$Row, $ColumnIndex].Style.Font.Color.SetColor([System.Drawing.Color]::Blue)
+                            $ws.Cells[$Row, $ColumnIndex].Style.Font.UnderLine = $true
+                        }
+                        else {
+                            $number = $null
+                            if ( $numberRegex.IsMatch($v)     -and  # if it contains digit(s) - this syntax is quicker than -match for many items and cuts out slow checks for non numbers
+                                 $NoNumberConversion -ne '*'  -and  # and NoNumberConversion isn't specified
+                                 $NoNumberConversion -notcontains $Name -and
+                                 [Double]::TryParse($v, [System.Globalization.NumberStyles]::Any, [System.Globalization.NumberFormatInfo]::CurrentInfo, [Ref]$number)
+                               ) {
+                                 $ws.Cells[$Row, $ColumnIndex].Value = $number
+                                 if ($setNumformat) {$ws.Cells[$Row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
+                            }
+                            else {
+                                $ws.Cells[$Row, $ColumnIndex].Value  = $v
+                            }
+
+                        }
+                    }
+                    catch {Write-Warning -Message "Could not insert the '$Name' property at Row $Row, Column $ColumnIndex"}
+                    $ColumnIndex += 1
+                }
+                $ColumnIndex -= 1 # column index will be the last column whether isDataTypeValueType was true or false
+                #endregion
             }
         }
-    }
+        catch {throw "Failed exporting data to worksheet '$WorksheetName' to '$Path': $_" }
 
-    End {
+    }}
+
+    end {
         if ($firstTimeThru -and $ws.Dimension) {
               $LastRow        = $ws.Dimension.End.Row
               $LastCol        = $ws.Dimension.End.Column
@@ -814,9 +793,12 @@
                     Add-ExcelName  -RangeName $targetRangeName -Range $ws.Cells[$targetRow, ($StartColumn + $c ), $LastRow, ($StartColumn + $c )]
                     try {#this test can throw with some names, surpress any error
                         if ([OfficeOpenXml.FormulaParsing.ExcelUtilities.ExcelAddressUtil]::IsValidAddress(($targetRangeName -replace '\W' , '_' ))) {
-                            Write-Warning "AutoNameRange: Property name '$targetRangeName' is also a valid Excel address and may cause issues. Consider renaming the property name."
+                            Write-Warning -Message "AutoNameRange: Property name '$targetRangeName' is also a valid Excel address and may cause issues. Consider renaming the property."
                         }
-                    } Catch {}
+                    }
+                    Catch {
+                        Write-Warning -Message "AutoNameRange: Testing '$targetRangeName' caused an error. This should be harmless, but a change of property name may be needed.."
+                    }
                 }
             }
             catch {Write-Warning -Message "Failed adding named ranges to worksheet '$WorksheetName': $_"  }
@@ -824,14 +806,17 @@
         #Empty string is not allowed as a name for ranges or tables.
         if ($RangeName) { Add-ExcelName  -Range $ws.Cells[$dataRange] -RangeName $RangeName}
 
-        if ($TableName) {
+        #Allow table to be inserted by specifying Name, or Style or both; only process autoFilter if there is no table (they clash).
+        if     ($null -ne $TableName) {
             if ($PSBoundParameters.ContainsKey('TableStyle')) {
                   Add-ExcelTable -Range $ws.Cells[$dataRange] -TableName $TableName -TableStyle $TableStyle
             }
             else {Add-ExcelTable -Range $ws.Cells[$dataRange] -TableName $TableName}
         }
-
-        if ($AutoFilter) {
+        elseif ($PSBoundParameters.ContainsKey('TableStyle')) {
+                  Add-ExcelTable -Range $ws.Cells[$dataRange] -TableName "" -TableStyle $TableStyle
+        }
+        elseif ($AutoFilter) {
             try {
                 $ws.Cells[$dataRange].AutoFilter = $true
                 Write-Verbose -Message "Enabled autofilter. "
@@ -926,7 +911,12 @@
         }
         if ($AutoSize) {
             try {
-                $ws.Cells.AutoFitColumns()
+                #Don't fit the all the columns in the sheet; if we are adding cells beside things with hidden columns, that unhides them
+                if ($MaxAutoSizeRows -and $MaxAutoSizeRows -lt $LastRow ) {
+                    $AutosizeRange = [OfficeOpenXml.ExcelAddress]::GetAddress($startRow,$StartColumn,   $MaxAutoSizeRows , $LastCol)
+                    $ws.Cells[$AutosizeRange].AutoFitColumns()
+                }
+                else {$ws.Cells[$dataRange].AutoFitColumns()  }
                 Write-Verbose -Message "Auto-sized columns"
             }
             catch {  Write-Warning -Message "Failed autosizing columns of worksheet '$WorksheetName': $_"}
@@ -1032,7 +1022,10 @@
             }
             catch {throw "Error applying conditional formatting to worksheet $_"}
         }
-
+        foreach ($s in $Style) {
+            if (-not $s.Range) {$s["Range"] = $ws.Dimension.Address }
+            Set-ExcelRange -WorkSheet $ws @s
+        }
         if ($CellStyleSB) {
             try {
                 $TotalRows = $ws.Dimension.Rows
@@ -1070,9 +1063,9 @@
                 }
                 try {
                     $TempZipPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ([System.IO.Path]::GetRandomFileName())
-                    [io.compression.zipfile]::ExtractToDirectory($pkg.File, $TempZipPath)  | Out-Null
+                    $null = [io.compression.zipfile]::ExtractToDirectory($pkg.File, $TempZipPath)
                     Remove-Item $pkg.File -Force
-                    [io.compression.zipfile]::CreateFromDirectory($TempZipPath, $pkg.File) | Out-Null
+                    $null = [io.compression.zipfile]::CreateFromDirectory($TempZipPath, $pkg.File)
                 }
                 catch {throw "Error resizipping $path : $_"}
             }
@@ -1088,7 +1081,7 @@
 function Add-WorkSheet  {
     <#
       .Synopsis
-        Adds a workshet to an existing workbook.
+        Adds a worksheet to an existing workbook.
       .Description
         If the named worksheet already exists, the -Clearsheet parameter decides whether it should be deleted and a new one returned,
         or if not specified the existing sheet will be returned. By default the sheet is created at the end of the work book, the
@@ -1251,7 +1244,7 @@ function Select-Worksheet {
     }
 }
 
-Function Add-ExcelName {
+function Add-ExcelName {
     <#
       .SYNOPSIS
         Adds a named-range to an existing Excel worksheet.
@@ -1286,7 +1279,7 @@ Function Add-ExcelName {
         }
         else  {
             Write-verbose -Message "Creating Named range '$RangeName' as $($Range.FullAddressAbsolute)."
-            $ws.Names.Add($RangeName, $Range) | Out-Null
+            $null = $ws.Names.Add($RangeName, $Range)
         }
     }
     catch {Write-Warning -Message "Failed adding named range '$RangeName' to worksheet '$($ws.Name)': $_"  }
@@ -1315,9 +1308,8 @@ function Add-ExcelTable {
         #The range of cells to assign to a table.
         [Parameter(Mandatory=$true)]
         [OfficeOpenXml.ExcelRange]$Range,
-        #The name for the Table - this should be unqiue in the Workbook.
-        [Parameter(Mandatory=$true)]
-        [String]$TableName,
+        #The name for the Table - this should be unqiue in the Workbook - auto generated names will be used if this is left empty.
+        [String]$TableName = "",
         #The Style for the table, by default "Medium6" is used
         [OfficeOpenXml.Table.TableStyles]$TableStyle = 'Medium6',
         #By default the header row is shown - it can be turned off with -ShowHeader:$false.
@@ -1340,32 +1332,37 @@ function Add-ExcelTable {
         [Switch]$PassThru
     )
     try {
-        if ([OfficeOpenXml.FormulaParsing.ExcelUtilities.ExcelAddressUtil]::IsValidAddress($TableName)) {
-            Write-Warning -Message "$tableName reads as an Excel address, and so is not allowed as a table name."
-            return
-        }
-        if ($tableName -notMatch '^[A-Z]') {
-            Write-Warning -Message "$tableName is not allowed as a table name because it does not begin with a letter."
-            return
-        }
-        if ($TableName -match "\W") {
-            Write-Warning -Message "At least one character in $TableName is illegal in a table name and will be replaced with '_' . "
-            $TableName = $TableName -replace '\W', '_'
-        }
-        $ws = $Range.Worksheet
-        #if the table exists in this worksheet, update it.
-        if ($ws.Tables[$TableName]) {
-            $tbl =$ws.Tables[$TableName]
-            $tbl.TableXml.table.ref = $Range.Address
-            Write-Verbose -Message "Re-defined table '$TableName', now at $($Range.Address)."
-        }
-        elseif ($ws.Workbook.Worksheets.Tables.Name -contains $TableName) {
-            Write-Warning -Message "The Table name '$TableName' is already used on a different worksheet."
-            return
+        if ($TableName -eq "" -or $null -eq $TableName) {
+            $tbl = $Range.Worksheet.Tables.Add($Range, "")
         }
         else {
-            $tbl = $ws.Tables.Add($Range, $TableName)
-            Write-Verbose -Message "Defined table '$TableName' at $($Range.Address)"
+            if ([OfficeOpenXml.FormulaParsing.ExcelUtilities.ExcelAddressUtil]::IsValidAddress($TableName)) {
+                Write-Warning -Message "$TableName reads as an Excel address, and so is not allowed as a table name."
+                return
+            }
+            if ($TableName -notMatch '^[A-Z]') {
+                Write-Warning -Message "$TableName is not allowed as a table name because it does not begin with a letter."
+                return
+            }
+            if ($TableName -match "\W") {
+                Write-Warning -Message "At least one character in $TableName is illegal in a table name and will be replaced with '_' . "
+                $TableName = $TableName -replace '\W', '_'
+            }
+            $ws = $Range.Worksheet
+            #if the table exists in this worksheet, update it.
+            if ($ws.Tables[$TableName]) {
+                $tbl =$ws.Tables[$TableName]
+                $tbl.TableXml.table.ref = $Range.Address
+                Write-Verbose -Message "Re-defined table '$TableName', now at $($Range.Address)."
+            }
+            elseif ($ws.Workbook.Worksheets.Tables.Name -contains $TableName) {
+                Write-Warning -Message "The Table name '$TableName' is already used on a different worksheet."
+                return
+            }
+            else {
+                $tbl = $ws.Tables.Add($Range, $TableName)
+                Write-Verbose -Message "Defined table '$($tbl.Name)' at $($Range.Address)"
+            }
         }
         #it seems that show total changes some of the others, so the sequence matters.
         if     ($PSBoundParameters.ContainsKey('ShowHeader'))        {$tbl.ShowHeader        = [bool]$ShowHeader}
@@ -1374,7 +1371,7 @@ function Add-ExcelTable {
             foreach ($k in $TotalSettings.keys) {
                 if (-not $tbl.Columns[$k]) {Write-Warning -Message "Table does not have a Column '$k'."}
                 elseif ($TotalSettings[$k] -notin @("Average", "Count", "CountNums", "Max", "Min", "None", "StdDev", "Sum", "Var") ) {
-                    Write-wanring "'$($TotalSettings[$k])' is not a valid total function."
+                    Write-Warning -Message "'$($TotalSettings[$k])' is not a valid total function."
                 }
                 else {$tbl.Columns[$k].TotalsRowFunction = $TotalSettings[$k]}
             }
@@ -1385,7 +1382,7 @@ function Add-ExcelTable {
         if     ($PSBoundParameters.ContainsKey('ShowLastColumn'))    {$tbl.ShowLastColumn    = [bool]$ShowLastColumn}
         if     ($PSBoundParameters.ContainsKey('ShowRowStripes'))    {$tbl.ShowRowStripes    = [bool]$ShowRowStripes}
         if     ($PSBoundParameters.ContainsKey('ShowColumnStripes')) {$tbl.ShowColumnStripes = [bool]$ShowColumnStripes}
-        if     ($PSBoundParameters.ContainsKey('TableStyle'))        {$tbl.TableStyle        = $TableStyle}
+        $tbl.TableStyle = $TableStyle
 
         if ($PassThru) {return $tbl}
     }

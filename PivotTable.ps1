@@ -272,8 +272,11 @@
         Write-Warning -Message "PivotTable defined in $($pivotTableName) already exists, only the data range will be changed."
         $pivotTable = $wsPivot.PivotTables[$pivotTableName]
         if (-not $SourceRange) { $SourceRange = $SourceWorkSheet.Dimension.Address}
-        $pivotTable.CacheDefinition.CacheDefinitionXml.pivotCacheDefinition.cacheSource.worksheetSource.ref = $SourceRange
-    }
+        $pivotTable.CacheDefinition.SourceRange =  $SourceWorkSheet.cells[$SourceRange]
+        #change for epPlus 4.5 -  Previously needed to hack the xml
+      # $pivotTable.CacheDefinition.CacheDefinitionXml.pivotCacheDefinition.cacheSource.worksheetSource.ref = $SourceRange
+
+     }
 
     #Create the chart if it doesn't exist, leave alone if it does.
     if ($IncludePivotChart -and -not $wsPivot.Drawings["Chart$pivotTableName"] ) {
@@ -312,6 +315,7 @@ function New-PivotTableDefinition {
 
         This is a re-work of one of the examples in Export-Excel - instead of writing out the pivot definition hash table it is built by calling New-PivotTableDefinition.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',Justification='Does not change system State')]
     param(
         [Parameter(Mandatory)]
         [Alias("PivtoTableName")]#Previous typo - use alias to avoid breaking scripts

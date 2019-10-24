@@ -7,23 +7,21 @@ If this project helped you reduce the time to get your job done, let me know.
 
 ![](https://media.giphy.com/media/hpXxJ78YtpT0s/giphy.gif)
 
+<br/>
 
-<br/>
-<br/>
-<br/>
-<p align="center">
-<a href="https://ci.appveyor.com/project/dfinke/importexcel/branch/master"><img src="https://ci.appveyor.com/api/projects/status/21hko6eqtpccrkba/branch/master?svg=true"></a>
-<a href="https://dougfinke.visualstudio.com/ImportExcel/_build?definitionId=10"><img src="https://dougfinke.visualstudio.com/ImportExcel/_apis/build/status/ImportExcel-CI?branchName=master"></a>
+<p>
+<a href="https://www.powershellgallery.com/packages/ImportExcel"><img src="https://img.shields.io/powershellgallery/v/ImportExcel.svg"></a>
+<a href="https://www.powershellgallery.com/packages/ImportExcel"><img src="https://img.shields.io/powershellgallery/dt/ImportExcel.svg"></a>
+<a href="./LICENSE.txt"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
 </p>
 
-<p align="center">
-<a href="./LICENSE.txt"><img
-src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
-<a href="https://www.powershellgallery.com/packages/ImportExcel"><img
-src="https://img.shields.io/powershellgallery/dt/ImportExcel.svg"></a>
-<a href="https://www.powershellgallery.com/packages/ImportExcel"><img
-src="https://img.shields.io/powershellgallery/v/ImportExcel.svg"></a>
-</p>
+| CI System    | Environment                   | Status                                                                                                                                                                                                                                          |
+|--------------|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| AppVeyor     | Windows, Core preview, Ubuntu | [![Build status](https://ci.appveyor.com/api/projects/status/21hko6eqtpccrkba/branch/master?svg=true)](https://ci.appveyor.com/project/dfinke/importexcel/branch/master)                                                                        |
+| Azure DevOps | Windows                       | [![Build Status](https://dougfinke.visualstudio.com/ImportExcel/_apis/build/status/dfinke.ImportExcel?branchName=master&jobName=Windows)](https://dougfinke.visualstudio.com/ImportExcel/_build/latest?definitionId=21&branchName=master)       |
+| Azure DevOps | Windows (Core)                | [![Build Status](https://dougfinke.visualstudio.com/ImportExcel/_apis/build/status/dfinke.ImportExcel?branchName=master&jobName=WindowsPSCore)](https://dougfinke.visualstudio.com/ImportExcel/_build/latest?definitionId=21&branchName=master) |
+| Azure DevOps | Ubuntu                        | [![Build Status](https://dougfinke.visualstudio.com/ImportExcel/_apis/build/status/dfinke.ImportExcel?branchName=master&jobName=Ubuntu)](https://dougfinke.visualstudio.com/ImportExcel/_build/latest?definitionId=21&branchName=master)        |
+| Azure DevOps | macOS                         | [![Build Status](https://dougfinke.visualstudio.com/ImportExcel/_apis/build/status/dfinke.ImportExcel?branchName=master&jobName=macOS)](https://dougfinke.visualstudio.com/ImportExcel/_build/latest?definitionId=21&branchName=master)         |
 
 <!-- /BADGES -->
 
@@ -37,7 +35,8 @@ This PowerShell Module allows you to read and write Excel files without installi
 ![](https://raw.githubusercontent.com/dfinke/ImportExcel/master/images/testimonial.png)
 
 # How to Videos
-* [PowerShell Excel Module - ImportExcel](https://www.youtube.com/watch?v=U3Ne_yX4tYo&list=PL5uoqS92stXioZw-u-ze_NtvSo0k0K0kq)
+
+* [PowerShell Excel Module - ImportExcel](https://www.youtube.com/watch?v=fvKKdIzJCws&list=PL5uoqS92stXioZw-u-ze_NtvSo0k0K0kq)
 
 Installation
 -
@@ -52,6 +51,104 @@ Install-Module ImportExcel -scope CurrentUser
 ```PowerShell
 Install-Module ImportExcel
 ```
+
+# What's new 6.5.2
+
+- Added the example ReadAllSheets.ps1 based on the thread https://github.com/dfinke/ImportExcel/issues/678
+
+# What's new 6.5.0
+
+This is now using the latest version of EPPlus. Unit tests are updated and passing, if you hit problems, please open an issue.
+You can rollback to an older version from the PowerShell Gallery if you are blocked.
+
+- Unit tests were updated and fixed
+- "Set-WorksheetProtection" is now switched on
+- Made a change to make Set-Excel range more friendly when Auto Sizing on non-windows platforms
+- Fixed - Windows only tests don't attempt to run on non-windows systems
+- Tests based on Get-Process don't attempt to run if <20 processes are returned
+- If $env:TEMP is not set (as will be the case on Linux)
+- Join-Path if used so paths are built with / or with \ as suits the OS where the test is running.
+- Excel Sparklines now supported, check out the examples [SalesByQuarter](https://github.com/dfinke/ImportExcel/blob/master/Examples/Sparklines/SalesByQuarter.ps1) and [Sparklines](https://github.com/dfinke/ImportExcel/blob/master/Examples/Sparklines/Sparklines.ps1).
+
+![](./images/Sparklines.png)
+
+
+# What's new 6.2.4
+
+Sensible parameter defaults, make your life easier and gets things done faster.
+
+- Thank you to [DomRRuggeri](https://github.com/DomRRuggeri) for the initial Out-Excel PR and kicking off the conversation on the improvements.
+- Thank you to [ili101](https://github.com/ili101) for refactoring and improving the defaults, and adding the tests for parameters.
+
+- Creates a table, with filtering
+- Chooses a `TableStyle`
+- Displays the Excel spreadsheet automatically
+
+```powershell
+Get-Process | select Company, Name, Handles | Export-Excel
+```
+
+![image](./images/ImproveNowDefaults.png)
+
+# What's new 6.2.3
+
+Thank you [jhoneill](https://github.com/jhoneill).
+
+- Refactored copy sheet and added pipe support
+- Add `ClearAll` to `Set-ExcelRange`
+- Fix broken test & regression for `passwords`
+    - **Note**: Passwords do not work on `pwsh`. The EPPlus library does not support these dotnet core APIs at this time.
+
+# What's new 6.2.2
+
+- Added requested feature, chart trendlines.
+    - [Example PowerShell script](https://github.com/dfinke/ImportExcel/blob/master/Examples/Charts/NumberOfVisitors.ps1)
+
+![](/images/ChartTrendlines.png)
+
+- Fixed Import-Excel and relative path issue, added unit tests.
+
+# What's new 6.2.0
+Thank you to [James O'Neill](https://github.com/jhoneill)
+
+- Fixed, Import-Excel can read xlsx files even if already open in Excel
+- Added `New-ExcelStyle`, plus `-Style` to `Export-Excel` and `-Merge` to `Set-ExcelRange`
+- Added [Style Examples](https://github.com/dfinke/ImportExcel/tree/master/Examples/Styles)
+
+![](https://raw.githubusercontent.com/dfinke/ImportExcel/master/images/NewExcelStyle.png)
+
+# What's new 6.1.0
+
+Thank you to [James O'Neill](https://github.com/jhoneill)
+- Instead of specifying a path provides an Excel Package object (from `Open-ExcelPackage`), using this avoids re-reading the whole file when importing multiple parts of it. To allow multiple read operations `Import-Excel` does NOT close the package, and you should use `Close-ExcelPackage -noSave` to close it.
+
+# What's new 6.0.0
+
+Thank you to [James O'Neill](https://github.com/jhoneill) for the optimizations, and refactoring leading to a ***~10x*** speed increase. Thanks to [ili101](https://github.com/ili101) for earlier PRs that provided the ground work for this.
+
+* Performance improvement to `Export-Excel` see [#506](https://github.com/dfinke/ImportExcel/issues/506) and [#555](https://github.com/dfinke/ImportExcel/issues/555). This has meant taking code in Add-CellValue back into process block of `Export-Excel`, as the overhead of calling the function was a lot greater than time executing the code inside it. [Blog post to follow](https://jamesone111.wordpress.com/). Some tests are showing a ***~10x*** speed increase. [#572](https://github.com/dfinke/ImportExcel/issues/572) was about a broken #region tag in this part of the code and that has been cleaned up in the process.
+
+* `Export-Excel` now has an -InputObject parameter (this was previously -TargetData , which is now an alias for InputObject).
+If the `inputobject` is an array, each item will be inserted, so you can run `export-excel -inputobject $x` rather than `$x | Export-Excel`, and if it is a `system.data.datatable` object it will be inserted directly rather than cell-by-cell. `Send-SQLDataToExcel` takes advantage of this new functionality. There are simple tests for these new items
+
+* `Export-Excel` previously assumed `-Now` if there were no other parameters, it will now assume `-Now` if there is no `-Path` or `-ExcelPackage`.
+The .PSD1 file now itemizes the items exported by the module [#557](https://github.com/dfinke/ImportExcel/issues/557)
+
+# What's new 5.4.5
+
+Thank you to [James O'Neill](https://github.com/jhoneill) for the great additions.
+
+- Modified Send-SQLDataToExcel so it creates tables and ranges itself; previously it relied on export-excel to do this which cause problems when adding data to an existing sheet (#555)
+- Added new command Add-ExcelDataValidation which will apply different data-validation rules to ranges of cells
+- Changed the export behavior so that (1) attempts to convert to a number only apply if the the value was a string; (2) Nulls are no longer converted to an empty string (3) there is a specific check for URIs and not just text which is a valid URI. Using UNC names in hyperlinks remains problematic.
+- Changed the behavior of AutoSize in export excel so it only applies to the exported columns. Previously if something was exported next to pre-existing data, AutoSize would resize the whole sheet, potentially undoing things which had been set on the earlier data. If anyone relied on this behavior they will need to explicitly tell the sheet to auto size with $sheet.cells.autofitColumns. (where $sheet points to the sheet, it might be $ExcelPackage.Workbook.Worksheets['Name'])
+- In Compare-Worksheet,the Key for comparing the sheets can now be written as a hash table with an expression - it is used with a Group-Object command so if it is valid in Group-Object it should be accepted; this allows the creation of composite keys when data being compared doesn't have a column which uniquely identifies rows.
+-  In Set-ExcelRange , added a 'Locked' option equivalent to the checkbox on the Protection Tab of the format cells dialog box in Excel.
+- Created a Set-WorksheetProtection function. This gives the same options the protection dialog in Excel but is 0.9 release at the moment.
+
+## New Example
+
+- Added [MutipleValidations.ps1](https://github.com/dfinke/ImportExcel/blob/master/Examples/ExcelDataValidation/MutipleValidations.ps1). Culled from the `tests`.
 
 # What's new 5.4.4
 
@@ -83,7 +180,7 @@ Install-Module ImportExcel
 
 # What's new 5.3.4
 
-- HotFix for parameter PivotTableSyle should be PivotTableStyle https://github.com/dfinke/ImportExcel/issues/453
+- HotFix for parameter PivotTableStyle should be PivotTableStyle https://github.com/dfinke/ImportExcel/issues/453
 
 # What's new 5.3.3
 

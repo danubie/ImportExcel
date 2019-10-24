@@ -25,6 +25,14 @@
         "WinsToFastLaps" and the data cells should contain =E2/C2 , =E3/C3 etc
         the new data cells should become a named range, which will also be
         named "WinsToFastLaps" and the column width will be set automatically.
+        When a value begins with "=", it is treated as a formula.
+        If value is a script block it will be evaluated, so here the string "=E$row/C$Row"
+        will have the number of the current row inserted. See the value parameter for a list of
+        variables which can be used. Note than when evaluating an expression in a string,
+        it is necessary to wrap it in $()  so $row is valid but $($row+1) is needed. To prevent
+        Variables merging into other parts of the string, use the back tick "$columnName`4" will
+        be "G4" - withouth the backtick the string will look for a variable named "columnName4"
+
       .EXAMPLE
         Set-ExcelColumn -Worksheet $ws -Heading "Link" -Value {"https://en.wikipedia.org" + $worksheet.cells["B$Row"].value  }  -AutoSize
 
@@ -44,6 +52,8 @@
     [cmdletbinding()]
     [Alias("Set-Column")]
     [OutputType([OfficeOpenXml.ExcelColumn],[String])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',Justification='Does not change system state')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification="Variables created for script block which may be passed as a parameter, but not used in the script")]
     Param (
         #If specifying the worksheet by name, the ExcelPackage object which contains the worksheet also needs to be passed.
         [Parameter(ParameterSetName="Package",Mandatory=$true)]
@@ -138,7 +148,7 @@
     process {
         if ($null -eq $workSheet.Dimension) {Write-Warning "Can't format an empty worksheet."; return}
         if ($Column  -eq 0 )  {$Column     = $endColumn    + 1 }
-        $columnName = [OfficeOpenXml.ExcelCellAddress]::new(1,$column).Address -replace "1",""
+        $columnName = (New-Object 'OfficeOpenXml.ExcelCellAddress' @(1, $column)).Address -replace "1",""
         Write-Verbose -Message "Updating Column $columnName"
         #If there is a heading, insert it and use it as the name for a range (if we're creating one)
         if      ($PSBoundParameters.ContainsKey('Heading'))                 {

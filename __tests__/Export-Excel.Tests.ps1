@@ -2,14 +2,22 @@
 
 #Import-Module $PSScriptRoot\..\ImportExcel.psd1 -Force
 
-if (Get-process -Name Excel,xlim -ErrorAction SilentlyContinue) {    Write-Warning -Message "You need to close Excel before running the tests." ; return}
 Describe ExportExcel {
+    . "$PSScriptRoot\Samples\Samples.ps1"
+    if (Get-process -Name Excel,xlim -ErrorAction SilentlyContinue) {
+        It "Excel is open" {
+            $Warning = "You need to close Excel before running the tests."
+            Write-Warning -Message $Warning
+            Set-ItResult -Inconclusive -Because $Warning
+        }
+        return
+    }
 
     Context "#Example 1      # Creates and opens a file with the right number of rows and columns" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-item -Path $path -ErrorAction SilentlyContinue
         #Test with a maximum of 100 processes for speed; export all properties, then export smaller subsets.
-        $processes = Get-Process | select-object -first 100 -Property * -excludeProperty  Parent
+        $processes = Get-Process | where {$_.StartTime} | Select-Object -first 100 -Property * -excludeProperty  Parent
         $propertyNames = $Processes[0].psobject.properties.name
         $rowcount = $Processes.Count
         $Processes | Export-Excel $path  #-show
@@ -68,7 +76,7 @@ Describe ExportExcel {
     }
 
     Context "                # NoAliasOrScriptPropeties -ExcludeProperty and -DisplayPropertySet work" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-item -Path $path  -ErrorAction SilentlyContinue
         $processes = Get-Process | Select-Object -First 100
         $propertyNames = $Processes[0].psobject.properties.where( {$_.MemberType -eq 'Property'}).name
@@ -117,7 +125,7 @@ Describe ExportExcel {
 
     Context "#Example 2      # Exports a list of numbers and applies number format " {
 
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-item -Path $path -ErrorAction SilentlyContinue
         #testing -ReturnRange switch and applying number format to Formulas as well as values.
         $returnedRange =   @($null, -1, 0, 34, 777, "", -0.5, 119, -0.1, 234, 788,"=A9+A10")   | Export-Excel -NumberFormat '[Blue]$#,##0.00;[Red]-$#,##0.00' -Path $path -ReturnRange
@@ -135,7 +143,7 @@ Describe ExportExcel {
         it "Created the worksheet with the expected name, number of rows and number of columns     " {
             $ws.Name                                                    | Should     be "sheet1"
             $ws.Dimension.Columns                                       | Should     be  1
-            $ws.Dimension.Rows                                          | Should     be  12
+            $ws.Dimension.End.Row                                       | Should     be  12
         }
 
         it "Set the default style for the sheet as expected                                        " {
@@ -156,7 +164,7 @@ Describe ExportExcel {
 
     Context "                # Number format parameter" {
         BeforeAll {
-            $path = "$env:temp\test.xlsx"
+            $path = "TestDrive:\test.xlsx"
             Remove-Item -Path  $path -ErrorAction SilentlyContinue
             1..10  | Export-Excel -Path $path -Numberformat 'Number'
             1..10  | Export-Excel -Path $path -Numberformat 'Percentage' -Append
@@ -179,7 +187,7 @@ Describe ExportExcel {
 
         if ((Get-Culture).NumberFormat.CurrencySymbol -eq "£") {$OtherCurrencySymbol = "$"}
         else {$OtherCurrencySymbol = "£"}
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         $warnVar = $null
         #Test correct export of different data types and number formats; test hyperlinks, test -NoNumberConversion test object is converted to a string with no warnings, test calcuation of formula
         Remove-item -Path $path -ErrorAction SilentlyContinue
@@ -296,7 +304,7 @@ Describe ExportExcel {
 
     Context "#               # Setting cells for different data types with -noHeader" {
 
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-item -Path $path -ErrorAction SilentlyContinue
         #Test -NoHeader & -NoNumberConversion
         [PSCustOmobject][Ordered]@{
@@ -357,7 +365,7 @@ Describe ExportExcel {
         #Test  New-ConditionalText builds correctly
         $ct = New-ConditionalText -ConditionalType GreaterThan 525 -ConditionalTextColor ([System.Drawing.Color]::DarkRed) -BackgroundColor ([System.Drawing.Color]::LightPink)
 
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-item -Path $path -ErrorAction SilentlyContinue
         #Test -ConditionalText with a single conditional spec.
         Write-Output 489 668 299 777 860 151 119 497 234 788 | Export-Excel -Path $path -ConditionalText $ct
@@ -384,18 +392,19 @@ Describe ExportExcel {
         }
     }
 
-    Context "#Example 6      # Adding multiple conditional formats using short form syntax. " {
-        #Test adding mutliple conditional blocks and using the minimal syntax for new-ConditionalText
-        $path = "$env:TEMP\Test.xlsx"
-        Remove-item -Path $path -ErrorAction SilentlyContinue
+    #Test adding mutliple conditional blocks and using the minimal syntax for new-ConditionalText
+    $path = "TestDrive:\test.xlsx"
+    Remove-item -Path $path -ErrorAction SilentlyContinue
 
-        #Testing -Passthrough
-        $Excel = Get-Service | Select-Object Name, Status, DisplayName, ServiceName |
-            Export-Excel $path -PassThru  -ConditionalText $(
-            New-ConditionalText Stop ([System.Drawing.Color]::DarkRed) ([System.Drawing.Color]::LightPink)
-            New-ConditionalText Running ([System.Drawing.Color]::Blue) ([System.Drawing.Color]::Cyan)
-        )
-        $ws = $Excel.Workbook.Worksheets[1]
+    #Testing -Passthrough
+    $Excel = Get-Service | Select-Object Name, Status, DisplayName, ServiceName |
+        Export-Excel $path -PassThru  -ConditionalText $(
+        New-ConditionalText Stop ([System.Drawing.Color]::DarkRed) ([System.Drawing.Color]::LightPink)
+        New-ConditionalText Running ([System.Drawing.Color]::Blue) ([System.Drawing.Color]::Cyan)
+    )
+    $ws = $Excel.Workbook.Worksheets[1]
+
+    Context "#Example 6      # Adding multiple conditional formats using short form syntax. " {
         it "Added two blocks of conditional formating for the data range                           " {
             $ws.ConditionalFormatting.Count                             | Should     be 2
             $ws.ConditionalFormatting[0].Address                        | Should     be ($ws.Dimension.Address)
@@ -408,8 +417,8 @@ Describe ExportExcel {
             $ws.ConditionalFormatting[1].Type                           | Should     be "ContainsText"
             #Add RGB Comparison
         }
-        Close-ExcelPackage -ExcelPackage $Excel
     }
+    Close-ExcelPackage -ExcelPackage $Excel
 
     Context "#Example 7      # Update-FirstObjectProperties works " {
         $Array = @()
@@ -448,7 +457,7 @@ Describe ExportExcel {
     }
 
     Context "#Examples 8 & 9 # Adding Pivot tables and charts from parameters" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         #Test -passthru and -worksheetName creating a new, named, sheet in an existing file.
         $Excel = Get-Process |  Select-Object -first 20 -Property Name, cpu, pm, handles, company |  Export-Excel  $path -WorkSheetname Processes -PassThru
         #Testing -Excel Pacakage and adding a Pivot-table as a second step. Want to save and re-open it ...
@@ -461,10 +470,13 @@ Describe ExportExcel {
             $excel.ProcessesPivotTable                                  | Should not beNullOrEmpty
             $PTws                                                       | Should not beNullOrEmpty
             $PTws.PivotTables.Count                                     | Should     be 1
-            $PTws.View.TabSelected                                      | Should     be $true
             $Excel.Workbook.Worksheets["Processes"]                     | Should not beNullOrEmpty
             $Excel.Workbook.Worksheets.Count                            | Should     beGreaterThan 2
             $excel.Workbook.Worksheets["Processes"].Dimension.rows      | Should     be 21    #20 data + 1 header
+        }
+        it "Selected  the Pivottable page                                                          " {
+            Set-ItResult -Pending -Because "Bug in EPPLus 4.5"
+            $PTws.View.TabSelected                                      | Should     be $true
         }
         $pt = $PTws.PivotTables[0]
         it "Built the expected Pivot table                                                         " {
@@ -505,7 +517,7 @@ Describe ExportExcel {
     }
 
     Context "                # Add-Worksheet inserted sheets, moved them correctly, and copied a sheet" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         #Test the -CopySource and -Movexxxx parameters for Add-WorkSheet
         $Excel = Open-ExcelPackage  $path
         #At this point Sheets Should be in the order Sheet1, Processes, ProcessesPivotTable
@@ -540,7 +552,7 @@ Describe ExportExcel {
     }
 
     Context "                # Create and append with Start row and Start Column, inc ranges and Pivot table. " {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         remove-item -Path $path -ErrorAction SilentlyContinue
         #Catch warning
         $warnVar = $null
@@ -590,7 +602,7 @@ Describe ExportExcel {
     }
 
     Context "                # Create and append explicit and auto table and range extension" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         #Test -Append automatically extends a table, even when it is not specified in the append command;
         Get-Process | Select-Object -first 10 -Property Name, cpu, pm, handles, company  | Export-Excel -Path $path  -TableName ProcTab -AutoNameRange   -WorkSheetname NoOffset -ClearSheet
         #Test number format applying to new data
@@ -623,7 +635,7 @@ Describe ExportExcel {
     }
 
     Context "#Example 11     # Create and append with title, inc ranges and Pivot table" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         #Test New-PivotTableDefinition builds definition using -Pivotfilter and -PivotTotals options.
         $ptDef = [ordered]@{}
         $ptDef += New-PivotTableDefinition -PivotTableName "PT1" -SourceWorkSheet 'Sheet1' -PivotRows "Status"  -PivotData @{'Status'  = 'Count'} -PivotTotals Columns -PivotFilter "StartType" -IncludePivotChart -ChartType BarClustered3D  -ChartTitle "Services by status" -ChartHeight 512 -ChartWidth 768 -ChartRow 10 -ChartColumn 0 -NoLegend -PivotColumns CanPauseAndContinue
@@ -678,10 +690,10 @@ Describe ExportExcel {
         $PC1 = $ptsheet1.Drawings[0]
         $PC2 = $ptsheet2.Drawings[0]
         it "Created the pivot tables linked to the right data.                                     " {
-            $PT1.CacheDefinition.CacheDefinitionXml.pivotCacheDefinition.cacheSource.worksheetSource.ref |
-                Should     be ("A1:" + $ws1.Dimension.End.Address)
-            $PT2.CacheDefinition.CacheDefinitionXml.pivotCacheDefinition.cacheSource.worksheetSource.ref |
-                Should     be ("A2:" + $ws2.Dimension.End.Address) #Title in row 1
+            $PT1.CacheDefinition.CacheDefinitionXml.pivotCacheDefinition.cacheSource.worksheetSource.name|
+                Should     be "All_services"
+            $PT2.CacheDefinition.CacheDefinitionXml.pivotCacheDefinition.cacheSource.worksheetSource.name |
+                Should     be "Processes"
         }
         it "Set the other pivot tables and chart options from the definitions.                     " {
             $pt1.PageFields[0].Name                                     | Should     be 'StartType'
@@ -705,7 +717,7 @@ Describe ExportExcel {
     }
 
     Context "#Example 13     # Formatting and another way to do a pivot.  " {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-Item $path
         #Test freezing top row/first column, adding formats and a pivot table - from Add-Pivot table not a specification variable - after the export
         $excel = Get-Process | Select-Object -Property Name, Company, Handles, CPU, PM, NPM, WS | Export-Excel -Path $path -ClearSheet -WorkSheetname "Processes" -FreezeTopRowFirstColumn -PassThru
@@ -785,7 +797,7 @@ Describe ExportExcel {
     }
 
     Context "                # Chart from MultiSeries.ps1 in the Examples\charts Directory" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-Item -Path   $path -ErrorAction SilentlyContinue
         #Test we haven't missed any parameters on New-ChartDefinition which are on add chart or vice versa.
 
@@ -843,7 +855,7 @@ Describe ExportExcel {
     }
 
     Context "                # variation of plot.ps1 from Examples Directory using Add chart outside ExportExcel" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         #Test inserting a fomual
         $excel = 0..360 | ForEach-Object {[pscustomobject][ordered]@{x = $_; Sinx = "=Sin(Radians(x)) "}} | Export-Excel -AutoNameRange -Path $path -WorkSheetname SinX -ClearSheet -FreezeFirstColumn -PassThru
         #Test-Add Excel Chart to existing data. Test add Conditional formatting with a formula
@@ -883,8 +895,9 @@ Describe ExportExcel {
         }
         Close-ExcelPackage -ExcelPackage $excel -nosave
     }
+
     Context "                # Quick line chart" {
-        $path = "$env:TEMP\Test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         Remove-Item -Path $path -ErrorAction SilentlyContinue
         #test drawing a chart when data doesn't have a string
         0..360 | ForEach-Object {[pscustomobject][ordered]@{x = $_; Sinx = "=Sin(Radians(x)) "}} | Export-Excel -AutoNameRange  -Path $path -LineChart
@@ -901,11 +914,9 @@ Describe ExportExcel {
 
     }
 
-
     Context "                # Quick Pie chart and three icon conditional formating" {
-        $path = "$Env:TEMP\Pie.xlsx"
+        $path = "TestDrive:\Pie.xlsx"
         Remove-Item -Path $path -ErrorAction SilentlyContinue
-
         $range = Get-Process| Group-Object -Property company | Where-Object -Property name |
              Select-Object -Property Name, @{n="TotalPm";e={($_.group | Measure-Object -sum -Property pm).sum }} |
                  Export-Excel -NoHeader -AutoNameRange -path $path -ReturnRange  -PieChart -ShowPercent
@@ -941,10 +952,16 @@ Describe ExportExcel {
     }
 
     Context "                # Awkward multiple tables" {
-        $path = "$Env:TEMP\test.xlsx"
+        $path = "TestDrive:\test.xlsx"
         #Test creating 3 on overlapping tables on the same page. Create rightmost the left most then middle.
         remove-item -Path $path -ErrorAction SilentlyContinue
-        $r = Get-ChildItem -path C:\WINDOWS\system32 -File
+        if ($IsLinux -or $IsMacOS) {
+            $SystemFolder = '/etc'
+        }
+        else {
+            $SystemFolder = 'C:\WINDOWS\system32'
+        }
+        $r = Get-ChildItem -path $SystemFolder -File
 
         "Biggest files" | Export-Excel -Path $path -StartRow 1 -StartColumn 7
         $r | Sort-Object length -Descending | Select-Object -First 14 Name, @{n="Size";e={$_.Length}}  |
@@ -966,12 +983,95 @@ Describe ExportExcel {
             $ws.Tables["FileSize"].Address.Address                      | Should     be "G2:H16" #Insert at row 2, Column 7, 14 rows x 2 columns of data
             $ws.Tables["FileSize"].StyleName                            | Should     be "TableStyleMedium2"
         }
-        it "Created the ExtSize  table in the right place with the right size                      " {
+        it "Created the ExtSize  table in the right place with the right size and style            " {
             $ws.Tables["ExtSize"].Address.Address                      | Should      be "A2:B14" #tile, then 12 rows x 2 columns of data
+            $ws.Tables["ExtSize"].StyleName                            | Should      be "TableStyleMedium6"
         }
         it "Created the ExtCount table in the right place with the right size                      " {
             $ws.Tables["ExtCount"].Address.Address                      | Should     be "D2:E12" #title, then 10 rows x 2 columns of data
         }
     }
 
+    Context "                # Parameters and ParameterSets" {
+        $Path = Join-Path (Resolve-Path 'TestDrive:').ProviderPath "test.xlsx"
+        Remove-Item -Path $Path -ErrorAction SilentlyContinue
+        $Processes = Get-Process | Select-Object -first 10 -Property Name, cpu, pm, handles, company
+
+        it "Default Set with Path".PadRight(87) {
+            $ExcelPackage = $Processes | Export-Excel -Path $Path -PassThru
+            $Worksheet = $ExcelPackage.Workbook.Worksheets[1]
+
+            $ExcelPackage.File | Should Be $Path
+            $Worksheet.Cells['A1'].Value | Should Be 'Name'
+            $Worksheet.Tables | Should BeNullOrEmpty
+            $Worksheet.AutoFilterAddress | Should BeNullOrEmpty
+        }
+        it "ExcelPackage Set. Path and (ExcelPackage or Now) should throw".PadRight(87) {
+            $ExcelPackage = Export-Excel -Path $Path -PassThru
+            {Export-Excel -ExcelPackage $ExcelPackage -Path $Path} | Should Throw 'Parameter set cannot be resolved using the specified named parameters'
+            {Export-Excel -ExcelPackage $ExcelPackage -Now} | Should Throw 'Parameter set cannot be resolved using the specified named parameters'
+
+            $Processes | Export-Excel -ExcelPackage $ExcelPackage
+            Remove-Item -Path $Path
+        }
+        it "If TableName and AutoFilter provided AutoFilter will be ignored".PadRight(87) {
+            $ExcelPackage = Export-Excel -Path $Path -PassThru -TableName 'Data' -AutoFilter
+            $Worksheet = $ExcelPackage.Workbook.Worksheets[1]
+
+            $Worksheet.Tables[0].Name | Should Be 'Data'
+            $Worksheet.AutoFilterAddress | Should BeNullOrEmpty
+        }
+        it "Default Set with Path and TableName with generated name".PadRight(87) {
+            $ExcelPackage = $Processes | Export-Excel -Path $Path -PassThru -TableName ''
+            $Worksheet = $ExcelPackage.Workbook.Worksheets[1]
+
+            $ExcelPackage.File | Should Be $Path
+            $Worksheet.Tables[0].Name | Should Be 'Table1'
+        }
+        it "Now will use temp Path, set TableName with generated name and AutoSize".PadRight(87) {
+            $ExcelPackage = $Processes | Export-Excel -Now -PassThru
+            $Worksheet = $ExcelPackage.Workbook.Worksheets[1]
+
+            $ExcelPackage.File | Should BeLike ([IO.Path]::GetTempPath() + '*')
+            $Worksheet.Tables[0].Name | Should Be 'Table1'
+            $Worksheet.AutoFilterAddress | Should BeNullOrEmpty
+            $Worksheet.Column(5).Width | Should BeGreaterThan 9.5
+        }
+        it "Now allows override of Path and TableName".PadRight(87) {
+            $ExcelPackage = $Processes | Export-Excel -Now -PassThru -Path $Path -TableName:$false
+            $Worksheet = $ExcelPackage.Workbook.Worksheets[1]
+
+            $ExcelPackage.File | Should Be $Path
+            $Worksheet.Tables | Should BeNullOrEmpty
+            $Worksheet.AutoFilterAddress | Should BeNullOrEmpty
+            $Worksheet.Column(5).Width | Should BeGreaterThan 9.5
+        }
+        <# Mock looks unreliable need to check
+        Mock -CommandName 'Invoke-Item'
+        it "Now will Show".PadRight(87) {
+            $Processes | Export-Excel
+            Assert-MockCalled -CommandName 'Invoke-Item' -Times 1 -Exactly -Scope 'It'
+        }
+        it "Now allows override of Show".PadRight(87) {
+            $Processes | Export-Excel -Show:$false
+            Assert-MockCalled -CommandName 'Invoke-Item' -Times 0 -Exactly -Scope 'It'
+        }
+        #>
+        it "Now allows override of AutoSize and TableName to AutoFilter".PadRight(87) {
+            $ExcelPackage = $Processes | Export-Excel -Now -PassThru -AutoSize:$false -AutoFilter
+            $Worksheet = $ExcelPackage.Workbook.Worksheets[1]
+
+            $Worksheet.Tables | Should BeNullOrEmpty
+            $Worksheet.AutoFilterAddress | Should Not BeNullOrEmpty
+            [math]::Round($Worksheet.Column(5).Width, 2) | Should Be 9.14
+        }
+        it "Now allows to set TableName".PadRight(87) {
+            $ExcelPackage = $Processes | Export-Excel -Now -PassThru -TableName 'Data'
+            $Worksheet = $ExcelPackage.Workbook.Worksheets[1]
+
+            $Worksheet.Tables[0].Name | Should Be 'Data'
+            $Worksheet.AutoFilterAddress | Should BeNullOrEmpty
+            $Worksheet.Column(5).Width | Should BeGreaterThan 9.5
+        }
+    }
 }

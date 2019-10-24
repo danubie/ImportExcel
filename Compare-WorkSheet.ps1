@@ -69,6 +69,8 @@
         Only the unchanged rows are highlighted.
 #>
     [cmdletbinding(DefaultParameterSetName)]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification="Write host used for sub-warning level message to operator which does not form output")]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification="False positives when initializing variable in begin block")]
     Param(
         #First file to compare.
         [parameter(Mandatory=$true,Position=0)]
@@ -191,7 +193,7 @@
         }
     }
     #if font color was specified, set it on changed properties where the same key appears in both sheets.
-    if      ($diff -and $FontColor -and ($propList -contains $Key)  ) {
+    if      ($diff -and $FontColor -and (($propList -contains $Key) -or ($key -is [hashtable]))  ) {
         $updates = $diff.where({$_.SideIndicator -ne "=="})  | Group-object -Property $Key | Where-Object {$_.count -eq 2}
         if ($updates) {
             $XL1 = Open-ExcelPackage -path $Referencefile
@@ -219,10 +221,8 @@
     }
     elseif  ($diff -and $FontColor) {Write-Warning -Message "To match rows to set changed cells, you must specify -Key and it must match one of the included properties." }
 
-    #if nothing was found write a message which wont be redirected
+    #if nothing was found write a message which will not be redirected
     if (-not $diff) {Write-Host "Comparison of $Referencefile::$worksheet1 and $Differencefile::$WorkSheet2 returned no results."  }
-
-
 
     if      ($Show)               {
         Start-Process -FilePath $Referencefile

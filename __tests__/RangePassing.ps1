@@ -1,4 +1,4 @@
-$path = "$env:temp\test.xlsx"
+$path = "TestDrive:\test.xlsx"
 describe "Consistent passing of ranges." {
     Context "Conditional Formatting"  {
         Remove-Item -path $path  -ErrorAction SilentlyContinue
